@@ -8,25 +8,25 @@ volatile unsigned char* port_b = (unsigned char*) 0x25;
 volatile unsigned char* ddr_b = (unsigned char*) 0x24;
 volatile unsigned char* pin_b = (unsigned char*) 0x23;
 
-////PORT A INPUT / OUTPUT
-volatile unsigned char* port_h = (unsigned char*) 0x25;
-volatile unsigned char* ddr_h = (unsigned char*) 0x24;
-volatile unsigned char* pin_h = (unsigned char*) 0x23;
+////PORT H INPUT / OUTPUT
+volatile unsigned char* port_h = (unsigned char*) 0x102;
+volatile unsigned char* ddr_h = (unsigned char*) 0x101;
+volatile unsigned char* pin_h = (unsigned char*) 0x100;
 
 ////PORT E INPUT/OUTPUT
-volatile unsigned char* port_e = (unsigned char*) 0x25;
-volatile unsigned char* ddr_e = (unsigned char*) 0x24;
-volatile unsigned char* pin_e = (unsigned char*) 0x23;
+volatile unsigned char* port_e = (unsigned char*) 0x2E;
+volatile unsigned char* ddr_e = (unsigned char*) 0x2D;
+volatile unsigned char* pin_e = (unsigned char*) 0x2C;
 
 ////PORT D INPUT/OUTPUT
-volatile unsigned char* port_d = (unsigned char*) 0x25;
-volatile unsigned char* ddr_d = (unsigned char*) 0x24;
-volatile unsigned char* pin_d = (unsigned char*) 0x23;
+volatile unsigned char* port_d = (unsigned char*) 0x2B;
+volatile unsigned char* ddr_d = (unsigned char*) 0x2A;
+volatile unsigned char* pin_d = (unsigned char*) 0x29;
 
 ////PORT A INPUT/OUTPUT
-volatile unsigned char* port_a = (unsigned char*) 0x25;
-volatile unsigned char* ddr_a = (unsigned char*) 0x24;
-volatile unsigned char* pin_a = (unsigned char*) 0x23;
+volatile unsigned char* port_a = (unsigned char*) 0x22;
+volatile unsigned char* ddr_a = (unsigned char*) 0x21;
+volatile unsigned char* pin_a = (unsigned char*) 0x20;
 
 //Place holder for Analog?
 //volatile unsigned char* port_b = (unsigned char*) 0x25;
