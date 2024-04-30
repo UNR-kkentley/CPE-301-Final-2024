@@ -28,10 +28,10 @@ volatile unsigned char* port_a = (unsigned char*) 0x22;
 volatile unsigned char* ddr_a = (unsigned char*) 0x21;
 volatile unsigned char* pin_a = (unsigned char*) 0x20;
 
-//Place holder for Analog?
-//volatile unsigned char* port_b = (unsigned char*) 0x25;
-//volatile unsigned char* ddr_b = (unsigned char*) 0x24;
-//volatile unsigned char* pin_b = (unsigned char*) 0x23;
+//PORT L INPUT/OUTPUT
+volatile unsigned char* port_l = (unsigned char*) 0x10B;
+volatile unsigned char* ddr_l = (unsigned char*) 0x10A;
+volatile unsigned char* pin_l = (unsigned char*) 0x109;
 
 volatile unsigned char* myTCCR1A = (unsigned char*) 0x80;
 volatile unsigned char* myTCCR1B = (unsigned char*) 0x81;
