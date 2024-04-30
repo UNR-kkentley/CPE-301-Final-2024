@@ -8,17 +8,24 @@
 #include <RTClib.h> //RTC
 #include <Wire.h> //I2C
 #include <DHT.h> //Humidity and Temp
+#include <DHT_U.h>
 
-RTC_DS1307 rtc;
+#define DHTPIN 13          // Define the pin for DHT
+#define DHTTYPE DHT11 
+DHT dht(DHTPIN, DHTTYPE); // Initialize DHT sensor
 
-const int stepsPerRevolution = 2038;
+
+
+//const int stepsPerRevolution = 2038;
 
 //Stepper myStepper = Stepper(stepsPerRevolution, 29, 27, 25, 23);
 
 // LCD pins <--> Arduino pins
-const int RS = 49, D4 = 50, D5 = 51, D6 = 52, D7 = 53;
-LiquidCrystal lcd(RS, D4, D5, D6, D7);
+const int RS = 49, RW = 48, E = 47, D4 = 53, D5 = 51, D6 = 50, D7 = 52;
+LiquidCrystal lcd(RS, RW, E, D4, D5, D6, D7);
 
+void U0init(int U0baud);
+void adc_init();
 
 ////PORT B INPUT/OUTPUT
 volatile unsigned char* port_b = (unsigned char*) 0x25;
@@ -62,16 +69,24 @@ volatile unsigned char* my_ADCSRB = (unsigned char*) 0x7B;
 volatile unsigned char* my_ADCSRA = (unsigned char*) 0x7A;
 volatile unsigned int* my_ADC_DATA = (unsigned int*) 0x78;
 
+#define RDA 0x80
+#define TBE 0x20  
+volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
+volatile unsigned char *myUCSR0B = (unsigned char *)0x00C1;
+volatile unsigned char *myUCSR0C = (unsigned char *)0x00C2;
+volatile unsigned int  *myUBRR0  = (unsigned int *) 0x00C4;
+volatile unsigned char *myUDR0   = (unsigned char *)0x00C6;
+
 void setup() {
   U0init(9600);
   adc_init();
-  
+  dht.begin();
   lcd.begin(16, 2); // set up number of columns and rows
   
 
-  RTC.begin(); //Start Real Time Clock
+ // rtc.begin(); //Start Real Time Clock
 
-  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+//  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   
   //RTC.setHourMode(CLOCK_H12);
   // if (RTC.getHourMode() == CLOCK_H12)
@@ -88,16 +103,68 @@ void setup() {
 }
 
 void loop() {
-  //incomplete until variables defined
-  if(){
+
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+  
+  if (humidity == -999.0 || temperature == -999.0) {
     lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("Humidity: ");
-    lcd.print();
-  }
+    lcd.setCursor(0, 0);
+    lcd.print("Failed to read");
+    lcd.setCursor(0, 1);
+    lcd.print("from DHT sensor!");
+    delay(2000);
+    return;
   }
 
+  // Display temperature and humidity on LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Temp: ");
+  lcd.print(temperature);
+  lcd.print(" C");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Humidity: ");
+  lcd.print(humidity);
+  lcd.print("%");
+
+  delay(2000); // Delay for 2 seconds before next reading
 }
+  
+
+
+
+void set_PB_as_output(unsigned char pin_num){
+  *ddr_b |= (0x01 << pin_num);
+}
+
+void write_PB(unsigned char pin_num, unsigned char in_char){
+  
+  if((in_char & 0x01) == 0){
+      *port_b &= ~(0x01 << pin_num);
+  }
+  else{
+    *port_b |= (0x01 << pin_num);
+  }
+  
+}
+
+void set_PL_as_output(unsigned char pin_num){
+  *ddr_b |= (0x01 << pin_num);
+}
+
+//void write_PB(unsigned char pin_num, unsigned char in_char){
+  
+ // if((in_char & 0x01) == 0){
+  //    *port_b &= ~(0x01 << pin_num);
+ // }
+ // else{
+ //   *port_b |= (0x01 << pin_num);
+ // }
+  
+//}
+
 
 void adc_init()
 {
