@@ -27,35 +27,38 @@ LiquidCrystal lcd(RS, RW, E, D4, D5, D6, D7);
 void U0init(int U0baud);
 void adc_init();
 
+unsigned long previousMillis = 0; //Previous state
+const long interval = 60000; //1-min delay
+
 ////PORT B INPUT/OUTPUT
 volatile unsigned char* port_b = (unsigned char*) 0x25;
 volatile unsigned char* ddr_b = (unsigned char*) 0x24;
-volatile unsigned char* pin_b = (unsigned char*) 0x23;
+volatile unsigned char* pin_b = (unsigned char*) 0x23; // DHT PB7 D13 // DC controller (PB4-PB6) (D10-D12) 
 
 ////PORT H INPUT / OUTPUT
 volatile unsigned char* port_h = (unsigned char*) 0x102;
 volatile unsigned char* ddr_h = (unsigned char*) 0x101;
-volatile unsigned char* pin_h = (unsigned char*) 0x100;
+volatile unsigned char* pin_h = (unsigned char*) 0x100;// DC controller (PH5-PH6) (D6-D7)
 
 ////PORT E INPUT/OUTPUT
 volatile unsigned char* port_e = (unsigned char*) 0x2E;
 volatile unsigned char* ddr_e = (unsigned char*) 0x2D;
-volatile unsigned char* pin_e = (unsigned char*) 0x2C;
+volatile unsigned char* pin_e = (unsigned char*) 0x2C; // Pushbutton Stepper D3 PE5. //Pushbutton on-off D2 PE4 Must use: ISR 
 
 ////PORT D INPUT/OUTPUT
 volatile unsigned char* port_d = (unsigned char*) 0x2B;
 volatile unsigned char* ddr_d = (unsigned char*) 0x2A;
-volatile unsigned char* pin_d = (unsigned char*) 0x29;
+volatile unsigned char* pin_d = (unsigned char*) 0x29; // Real Time Clock RTC D20-D21 PD0-PD1
 
 ////PORT A INPUT/OUTPUT
 volatile unsigned char* port_a = (unsigned char*) 0x22;
 volatile unsigned char* ddr_a = (unsigned char*) 0x21;
-volatile unsigned char* pin_a = (unsigned char*) 0x20;
+volatile unsigned char* pin_a = (unsigned char*) 0x20; //Water Sensor A7 PF7 //Green LED D23 PA1 //Yellow LED D24 PA2 //Blue LED D25 PA3 //Red LED D27 PA5 
 
 //PORT L INPUT/OUTPUT
 volatile unsigned char* port_l = (unsigned char*) 0x10B;
 volatile unsigned char* ddr_l = (unsigned char*) 0x10A;
-volatile unsigned char* pin_l = (unsigned char*) 0x109;
+volatile unsigned char* pin_l = (unsigned char*) 0x109; //LCD Pins 
 
 volatile unsigned char* myTCCR1A = (unsigned char*) 0x80;
 volatile unsigned char* myTCCR1B = (unsigned char*) 0x81;
@@ -104,6 +107,13 @@ void setup() {
 
 void loop() {
 
+
+
+  unsigned long currentMillis = millis(); // Get the current time
+  
+  if (currentMillis - previousMillis >= interval) { // Check if it's time to update the LCD
+    previousMillis = currentMillis; // Save the last time the LCD was updated
+    
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature();
   
@@ -113,7 +123,7 @@ void loop() {
     lcd.print("Failed to read");
     lcd.setCursor(0, 1);
     lcd.print("from DHT sensor!");
-    delay(2000);
+    delay(2000); // use in house delay function
     return;
   }
 
@@ -121,15 +131,16 @@ void loop() {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Temp: ");
-  lcd.print(temperature);
-  lcd.print(" C");
+  lcd.print(temperature *9/5 +32);
+  lcd.print(" F");
 
   lcd.setCursor(0, 1);
   lcd.print("Humidity: ");
   lcd.print(humidity);
   lcd.print("%");
 
-  delay(2000); // Delay for 2 seconds before next reading
+  
+}
 }
   
 
