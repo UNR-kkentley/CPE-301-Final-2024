@@ -293,4 +293,12 @@ ISR(INT4_vect)
 {
   previousStatus = !previousStatus;
   currentStatus = !currentStatus;
+  
+  if (currentStatus) {
+    // Button is pressed, turn on the yellow LED
+    *port_a |= (1 << PA2); // Set PA2 high to turn on the yellow LED
+  } else {
+    // Button is released, turn off the yellow LED
+    *port_a &= ~(1 << PA2); // Set PA2 low to turn off the yellow LED
+  }
 }
