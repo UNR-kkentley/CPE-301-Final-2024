@@ -14,7 +14,8 @@
 #define DHTTYPE DHT11 
 DHT dht(DHTPIN, DHTTYPE); // Initialize DHT sensor
 
-
+volatile bool currentStatus = false;
+volatile bool previousStatus = true;
 
 //const int stepsPerRevolution = 2038;
 
@@ -80,12 +81,26 @@ volatile unsigned char *myUCSR0C = (unsigned char *)0x00C2;
 volatile unsigned int  *myUBRR0  = (unsigned int *) 0x00C4;
 volatile unsigned char *myUDR0   = (unsigned char *)0x00C6;
 
+volatile unsigned char* myEIMSK = (unsigned char*) 0x1D; 
+volatile unsigned char* myEIFR = (unsigned char*) 0x1C;  
+volatile unsigned char* mySREG = (unsigned char*) 0x3F; 
+volatile unsigned char* myEICRB = (unsigned char*) 0x6A;
+
+unsigned int adc_read(unsigned char adc_channel_num);
+unsigned int water_value = adc_read(7); //Read from ADC channel 7
+
 void setup() {
   U0init(9600);
   adc_init();
   dht.begin();
   lcd.begin(16, 2); // set up number of columns and rows
-  
+
+  unsigned char eicrb_temp = *myEICRB; // Temporary variable to store the value of myEICRB
+  eicrb_temp |= (1 << ISC41); // Set ISC41 bit
+  eicrb_temp &= ~(1 << ISC40); // Clear ISC40 bit
+  *myEICRB = eicrb_temp; // Assign the modified value back to myEICRB
+
+  *myEIMSK |= (1 << INT4); // Enable INT4 interrupt
 
  // rtc.begin(); //Start Real Time Clock
 
@@ -108,73 +123,29 @@ void setup() {
 void loop() {
 
 
-
-  unsigned long currentMillis = millis(); // Get the current time
-  
-  if (currentMillis - previousMillis >= interval) { // Check if it's time to update the LCD
-    previousMillis = currentMillis; // Save the last time the LCD was updated
+ // while(!previousStatus && currentStatus){
     
-  float humidity = dht.readHumidity();
-  float temperature = dht.readTemperature();
-  
-  if (humidity == -999.0 || temperature == -999.0) {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Failed to read");
-    lcd.setCursor(0, 1);
-    lcd.print("from DHT sensor!");
-    delay(2000); // use in house delay function
-    return;
-  }
+  //  float humidity = dht.readHumidity();
+ //   float temperature = dht.readTemperature();
 
-  // Display temperature and humidity on LCD
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Temp: ");
-  lcd.print(temperature *9/5 +32);
-  lcd.print(" F");
+    //water_value = adc_read(7);
 
-  lcd.setCursor(0, 1);
-  lcd.print("Humidity: ");
-  lcd.print(humidity);
-  lcd.print("%");
+  //  *port_a ^= (1 << PA2);
 
-  
-}
-}
-  
-
-
-
-void set_PB_as_output(unsigned char pin_num){
-  *ddr_b |= (0x01 << pin_num);
-}
-
-void write_PB(unsigned char pin_num, unsigned char in_char){
-  
-  if((in_char & 0x01) == 0){
-      *port_b &= ~(0x01 << pin_num);
-  }
-  else{
-    *port_b |= (0x01 << pin_num);
-  }
-  
-}
-
-void set_PL_as_output(unsigned char pin_num){
-  *ddr_b |= (0x01 << pin_num);
-}
-
-//void write_PB(unsigned char pin_num, unsigned char in_char){
-  
- // if((in_char & 0x01) == 0){
-  //    *port_b &= ~(0x01 << pin_num);
+    //water level error message to LCD
+    
  // }
- // else{
- //   *port_b |= (0x01 << pin_num);
+
+ // previousStatus = currentStatus;
+
+ // if (!(*pin_e & (1 << PE5))) {
+ //   currentStatus = true; // Button is pressed
+ // } else {
+ //   currentStatus = false; // Button is not pressed
  // }
-  
-//}
+  unsigned int adc_read(unsigned char adc_channel_num);
+  unsigned int water_value = adc_read(7); //Read from ADC channel 7
+ }
 
 
 void adc_init()
@@ -269,4 +240,10 @@ void my_delay(unsigned int freq)
   *myTCCR1B &= 0xF8;   // 0b 0000 0000
   // reset TOV           
   *myTIFR1 |= 0x01;
+}
+
+ISR(INT4_vect)
+{
+  previousStatus = !previousStatus;
+  currentStatus = !currentStatus;
 }
