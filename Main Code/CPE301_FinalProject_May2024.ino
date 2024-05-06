@@ -143,8 +143,55 @@ void loop() {
  // } else {
  //   currentStatus = false; // Button is not pressed
  // }
-  unsigned int adc_read(unsigned char adc_channel_num);
-  unsigned int water_value = adc_read(7); //Read from ADC channel 7
+ // unsigned int adc_read(unsigned char adc_channel_num);
+ // unsigned int water_value = adc_read(7); //Read from ADC channel 7
+
+ unsigned int water_value = adc_read(7); //Read from ADC channel 7
+
+  if (water_value < 102) { // Display error message for low water level
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Error Message:");
+    lcd.setCursor(0,1);
+    lcd.print("Water Level Low");
+  } 
+  else {
+    unsigned long currentMillis = millis(); // Get the current time
+  
+  if (currentMillis - previousMillis >= interval) { // Check if it's time to update the LCD
+    previousMillis = currentMillis; // Save the last time the LCD was updated
+    
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+  
+  if (humidity == -999.0 || temperature == -999.0) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Failed to read");
+    lcd.setCursor(0, 1);
+    lcd.print("from DHT sensor!");
+    delay(2000); // use in house delay function
+    return;
+  }
+
+  // Display temperature and humidity on LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Temp: ");
+  lcd.print(temperature *9/5 +32);
+  lcd.print(" F");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Humidity: ");
+  lcd.print(humidity);
+  lcd.print("%");
+  }
+
+
+
+
+  
+}
  }
 
 
