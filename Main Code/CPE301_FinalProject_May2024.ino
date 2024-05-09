@@ -34,6 +34,18 @@ unsigned int water_value = adc_read(7); //Read from ADC channel 7
 #define RDA 0x80
 #define TBE 0x20
 
+#define step_move 16
+#define STEPS 64
+
+//Stepper potentiometer variables
+int previous_pot_val = 0;
+Stepper  myStepper(STEPS, 6, 8, 7, 9) ; //declaring  stepper motor  //this is the correct order 6,8,7,9
+
+//DC motor pins
+#define motorInput1 11
+#define motorInput2 12
+#define motorEnablePin 10
+
 //---------------------------------------------------------
 
 ////PORT B INPUT/OUTPUT
@@ -60,6 +72,11 @@ volatile unsigned char* pin_d = (unsigned char*) 0x29; // Real Time Clock RTC D2
 volatile unsigned char* port_a = (unsigned char*) 0x22;
 volatile unsigned char* ddr_a = (unsigned char*) 0x21;
 volatile unsigned char* pin_a = (unsigned char*) 0x20; //Water Sensor A7 PF7 //Green LED D23 PA1 //Yellow LED D24 PA2 //Blue LED D25 PA3 //Red LED D27 PA5
+
+// Port F Addresses for Input/Output
+volatile unsigned char* port_f = (unsigned char*) 0x31; // Data Register for PORT F
+volatile unsigned char* ddr_f = (unsigned char*) 0x30;  // Data Direction Register for PORT F
+volatile unsigned char* pin_f = (unsigned char*) 0x2F;  // Input Pins Address for PORT F
 
 //PORT L INPUT/OUTPUT
 volatile unsigned char* port_l = (unsigned char*) 0x10B;
@@ -109,8 +126,14 @@ void setup() {
   dht.begin();
   lcd.begin(16, 2); // Set up the LCD
   *ddr_a |= 0b00111110; // Set LED pins as output
+  myStepper.setSpeed(128) ;
 
   set_PE_as_input(4); // Set up button as input
+
+  //DC motor pins
+  set_PB_as_output(11);
+  set_PB_as_output(12);
+  set_PB_as_output(10);
 
   presentState = DISABLED_ST;
   nextState = DISABLED_ST;
@@ -123,6 +146,9 @@ void loop() {
   unsigned int water_value = adc_read(7); // Read from ADC channel 7
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature();
+
+  //stepperMotor(1);
+  //dc_motor(1); //call function for motor control 1 - motor on 0 - motor off
 
   switch (presentState) {
     case DISABLED_ST:
@@ -297,10 +323,65 @@ void enableLED(int state) {
 
 //------------------------------------------------------
 
+
+
+void stepperMotor(int stepperCondition) {
+  if (stepperCondition == 1) {
+    int current_pot_val = analogRead(9); //adc_read does not work, stepper does not loop if using adc_read
+
+    myStepper.step(current_pot_val - previous_pot_val);
+
+    previous_pot_val = current_pot_val;
+  }
+}
+
+void set_PF_as_input(unsigned char pin_num) { //function to set port B to output
+  *ddr_f &= ~(1 << pin_num);
+}
+
 void set_PE_as_input(unsigned char pin_num) {
   *ddr_e &= ~(0x01 << pin_num);
+
+}
+
+void set_pe_pullup(unsigned char pin_num) {
   *port_e |= (1 << pin_num);
 
+}
+
+void set_PB_as_output(unsigned char pin_num) { //function to set port B to output
+  *ddr_b |= (0x01 << pin_num);
+}
+
+void write_PB_high(unsigned char pin_num) { //function to set specified port B pin HIGH
+  *port_b |= (0x01 << pin_num);
+}
+
+void set_PB_as_input(unsigned char pin_num) { //function to set port B to output
+  *ddr_b &= ~(1 << pin_num);
+}
+
+void write_PB_low(unsigned char pin_num) { //function to set specified port B pin LOW
+  *port_b &= ~(1 << pin_num);
+}
+
+void write_pin(unsigned char pin_num, int value) { //function to set specified value at specified port&pin
+  *port_b = (*port_b & ~(1 << pin_num)) | value;
+}
+
+void dc_motor(int motorCondition) { //function to control dc motor output
+
+  float temperature = (dht.readTemperature() * 9 / 5 + 32); // convert temperature reading to fahrenheit
+
+  if (motorCondition == 1) {
+    while (temperature > 70.0) { // dc motor will only power on if DHT11 temperature is above threshold
+      write_PB_high(motorInput1); // provide power to dc motor
+      //write_PB_low(motorInput2);
+      write_pin(motorEnablePin, 225); // set dc motor speed via enable pin on L293D chip
+
+      temperature = (dht.readTemperature() * 9 / 5 + 32); //re-measure temperature for while loop condition
+    }
+  }
 }
 
 void hInterrupt()
