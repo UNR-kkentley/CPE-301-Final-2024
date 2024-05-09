@@ -1,7 +1,3 @@
-
-// CPE Final Project May 2024
-//Kieran Kentley, Knight Fevella Potes, Eric Cordova Gonzalez, Abigail Ganze
-
 //include libraries that are allowed
 #include <Stepper.h> //Includes the Arduino Stepper Library
 #include <LiquidCrystal.h> //LCD Library
@@ -45,6 +41,9 @@ Stepper  myStepper(STEPS, 6, 8, 7, 9) ; //declaring  stepper motor  //this is th
 #define motorInput1 11
 #define motorInput2 12
 #define motorEnablePin 10
+
+#define DEBOUNCE_INTERVAL 781  // Approximately 50ms
+
 
 //---------------------------------------------------------
 
@@ -147,22 +146,24 @@ void loop() {
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature();
 
+
+
+  //stepperMotor(1);
+  //dc_motor(1); //call function for motor control 1 - motor on 0 - motor off
+
   // Handle state-specific logic
   switch (presentState) {
     case DISABLED_ST:
       if (buttonPressed) {
         buttonPressed = false;
-        lcd.clear();
-        lcd.print("Disabled State");
-        nextState = IDLE_ST;
-      } else {
-        if (presentState != nextState) {
-          lcd.clear();
-          lcd.print("System Disabled");
+        if (presentState != RUNNING_ST) {
+          dc_motor(0); // Ensures the motor is off if not in RUNNING state
         }
+        nextState = IDLE_ST;
       }
+      lcd.clear();
+      lcd.print("Disabled");
       break;
-
     case IDLE_ST:
       lcd.clear();
       lcd.print("Temp: ");
@@ -172,29 +173,42 @@ void loop() {
       lcd.print("Humidity: ");
       lcd.print(humidity);
       lcd.print("%");
+      if (presentState != RUNNING_ST) {
+        dc_motor(0); // Ensures the motor is off if not in RUNNING state
+      }
 
       if (buttonPressed) {
         buttonPressed = false;
         nextState = DISABLED_ST;
       } else if (water_value <= 120) {
         nextState = ERROR_ST;
-      } else if (water_value > 120 && temperature > temp_value) { 
+      } else if (water_value > 120 && temperature > temp_value) {
         nextState = RUNNING_ST;
       }
       break;
-
     case RUNNING_ST:
-      if (water_value > 120 && temperature > temp_value) {  
-        if (presentState != nextState) {
-          enableLED(RUNNING_ST);
-          lcd.clear();
-          lcd.print("System Running");
-        }
-      } else {
+      lcd.clear();
+      lcd.print("Temp: ");
+      lcd.print(temperature);
+      lcd.print(" C");
+      lcd.setCursor(0, 1);
+      lcd.print("Humidity: ");
+      lcd.print(humidity);
+      lcd.print("%");
+      dc_motor(1);
+      if (presentState != RUNNING_ST) {
+        dc_motor(0); // Ensures the motor is off if not in RUNNING state
+      }
+
+      if (temperature < temp_value) {
+        nextState = IDLE_ST;
+      } else if (buttonPressed) {
+        buttonPressed = false;
+        nextState = DISABLED_ST;
+      } else if (water_value <= 120) {
         nextState = ERROR_ST;
       }
       break;
-
     case ERROR_ST:
       lcd.clear();
       lcd.setCursor(0, 0);
@@ -202,6 +216,9 @@ void loop() {
       lcd.setCursor(0, 1);
       lcd.print("Water Level Low");
       enableLED(ERROR_ST); // Ensure RED LED is on in ERROR state
+      if (presentState != RUNNING_ST) {
+        dc_motor(0); // Ensures the motor is off if not in RUNNING state
+      }
 
       if (buttonPressed) {
         buttonPressed = false;
@@ -210,13 +227,15 @@ void loop() {
       break;
   }
 
-  // Update the current state and handle LED settings
+  // State transition logic...
   if (nextState != presentState) {
+    if (nextState != RUNNING_ST) {
+      dc_motor(0); // Turn off the motor on state exit
+    }
     presentState = nextState;
     enableLED(presentState);
   }
 }
-
 
 //--------------------------------------------------------------------------------
 
@@ -286,34 +305,29 @@ void U0putchar(unsigned char U0pdata)
   *myUDR0 = U0pdata;
 }
 
+void my_delay(unsigned int ms) {
+   
+    // timer to prescale by 64
+    unsigned long ticks = (16000000 / 64) * ((double)ms / 1000.0);
 
-void my_delay(unsigned int freq)
-{
-  // calc period
-  double period = 1.0 / double(freq);
-  // 50% duty cycle
-  double half_period = period / 2.0f;
-  // clock period def
-  double clk_period = 0.0000000625;
-  // calc ticks
-  unsigned int ticks = half_period / clk_period;
-  //Serial.println(ticks);
-  // stop the timer
-  *myTCCR1B &= 0xF8;
-  // set the counts
-  *myTCNT1 = (unsigned int) (65535 - ticks); //(65536 - ticks)
-  // start the timer
-  * myTCCR1B |= 0b00000010;
-  //prescaler 0b00000001 - changed to be before TCCR1A is set to 0 for start
-  * myTCCR1A = 0x0;
+    if (ticks > 65535) {
+        ticks = 65535; // Cap the value to the timer's maximum
+    }
 
-  // wait for overflow
-  while ((*myTIFR1 & 0x01) == 0); // 0b 0000 0000
-  // stop the timer
-  *myTCCR1B &= 0xF8;   // 0b 0000 0000
-  // reset TOV
-  *myTIFR1 |= 0x01;
+    *myTCNT1 = 65535 - ticks; // Count up to 65535
+
+    *myTCCR1B = 0x03; // Clock select bits: prescaler set to 64
+
+    // Wait for the timer overflow flag to be set
+    while ((*myTIFR1 & 0x01) == 0);
+
+    // Stop the timer
+    *myTCCR1B = 0x00; // Stop the timer by setting the clock select bits to zero
+
+    // Clear the overflow flag by writing a 1 to it
+    *myTIFR1 |= 0x01;
 }
+
 
 void enableLED(int state) {
   *port_a &= ~(0b00111110); // Turn off all LEDs
@@ -381,28 +395,42 @@ void write_pin(unsigned char pin_num, int value) { //function to set specified v
   *port_b = (*port_b & ~(1 << pin_num)) | value;
 }
 
-void dc_motor(int motorCondition) { //function to control dc motor output
+void dc_motor(int motorCondition) {
+  static bool motorRunning = false;
 
-  float temperature = (dht.readTemperature() * 9 / 5 + 32); // convert temperature reading to fahrenheit
-
-  if (motorCondition == 1) {
-    while (temperature > 70.0) { // dc motor will only power on if DHT11 temperature is above threshold
-      write_PB_high(motorInput1); // provide power to dc motor
-      //write_PB_low(motorInput2);
-      write_pin(motorEnablePin, 225); // set dc motor speed via enable pin on L293D chip
-
-      temperature = (dht.readTemperature() * 9 / 5 + 32); //re-measure temperature for while loop condition
+  if (motorCondition == 1 && !motorRunning) {
+    float temperature = dht.readTemperature();
+    if (temperature > temp_value) {
+      write_PB_high(motorInput1); // Provide power to DC motor
+      write_pin(motorEnablePin, 225); // Set DC motor speed
+      motorRunning = true;
     }
+  } else if (motorCondition == 0 && motorRunning) {
+    write_PB_low(motorInput1); // Stop DC motor
+    motorRunning = false;
   }
 }
 
-void hInterrupt()
-{
-  static unsigned long lastInterruptTime = 0;
-  unsigned long interruptTime = millis();
 
-  if (interruptTime - lastInterruptTime > 50) {
+void setupInterruptTimer() {
+    TCCR1A = 0;   // Clear register A
+    TCCR1B = 0;   // Clear register B
+
+    TCNT1  = 65535 - DEBOUNCE_INTERVAL;  // Set the timer count for the desired delay
+
+    TIMSK1 &= ~(1 << TOIE1);  
+    TCCR1B |= (1 << CS12);    // Set the prescaler to 256 and start the timer
+    TIMSK1 |= (1 << TOIE1);   
+}
+
+ISR(TIMER1_OVF_vect) {
+    TCNT1 = 65535 - DEBOUNCE_INTERVAL;  // Reload timer
     buttonPressed = true;
-    lastInterruptTime = interruptTime;
-  }
+    TIMSK1 &= ~(1 << TOIE1);  // Disable timer1 interrupts
+}
+
+void hInterrupt() {
+    TIMSK1 &= ~(1 << TOIE1);  
+    TCNT1 = 65535 - DEBOUNCE_INTERVAL;  // Restart the debounce timer
+    TIMSK1 |= (1 << TOIE1);  // Turn on timer1 interrupts
 }
