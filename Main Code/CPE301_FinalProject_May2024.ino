@@ -1,5 +1,5 @@
 
-// CPE Final Project April 2024
+// CPE Final Project May 2024
 //Kieran Kentley, Knight Fevella Potes, Eric Cordova Gonzalez, Abigail Ganze
 
 //include libraries that are allowed
@@ -11,30 +11,35 @@
 #include <DHT_U.h>
 
 #define DHTPIN 13          // Define the pin for DHT
-#define DHTTYPE DHT11 
+#define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE); // Initialize DHT sensor
 
-volatile bool currentStatus = false;
-volatile bool previousStatus = true;
-
-//const int stepsPerRevolution = 2038;
-
-//Stepper myStepper = Stepper(stepsPerRevolution, 29, 27, 25, 23);
+void U0init(int U0baud);
+void adc_init();
+unsigned int adc_read(unsigned char adc_channel_num);
+void enableLED(int color);
+void set_PE_as_input(unsigned char pin_num);
 
 // LCD pins <--> Arduino pins
 const int RS = 49, RW = 48, E = 47, D4 = 53, D5 = 51, D6 = 50, D7 = 52;
 LiquidCrystal lcd(RS, RW, E, D4, D5, D6, D7);
 
-void U0init(int U0baud);
-void adc_init();
-
 unsigned long previousMillis = 0; //Previous state
 const long interval = 60000; //1-min delay
+
+unsigned int adc_read(unsigned char adc_channel_num);
+unsigned int water_value = adc_read(7); //Read from ADC channel 7
+#define temp_value 20
+
+#define RDA 0x80
+#define TBE 0x20
+
+//---------------------------------------------------------
 
 ////PORT B INPUT/OUTPUT
 volatile unsigned char* port_b = (unsigned char*) 0x25;
 volatile unsigned char* ddr_b = (unsigned char*) 0x24;
-volatile unsigned char* pin_b = (unsigned char*) 0x23; // DHT PB7 D13 // DC controller (PB4-PB6) (D10-D12) 
+volatile unsigned char* pin_b = (unsigned char*) 0x23; // DHT PB7 D13 // DC controller (PB4-PB6) (D10-D12)
 
 ////PORT H INPUT / OUTPUT
 volatile unsigned char* port_h = (unsigned char*) 0x102;
@@ -44,7 +49,7 @@ volatile unsigned char* pin_h = (unsigned char*) 0x100;// DC controller (PH5-PH6
 ////PORT E INPUT/OUTPUT
 volatile unsigned char* port_e = (unsigned char*) 0x2E;
 volatile unsigned char* ddr_e = (unsigned char*) 0x2D;
-volatile unsigned char* pin_e = (unsigned char*) 0x2C; // Pushbutton Stepper D3 PE5. //Pushbutton on-off D2 PE4 Must use: ISR 
+volatile unsigned char* pin_e = (unsigned char*) 0x2C; // Pushbutton Stepper D3 PE5. //Pushbutton on-off D2 PE4 Must use: ISR
 
 ////PORT D INPUT/OUTPUT
 volatile unsigned char* port_d = (unsigned char*) 0x2B;
@@ -54,12 +59,12 @@ volatile unsigned char* pin_d = (unsigned char*) 0x29; // Real Time Clock RTC D2
 ////PORT A INPUT/OUTPUT
 volatile unsigned char* port_a = (unsigned char*) 0x22;
 volatile unsigned char* ddr_a = (unsigned char*) 0x21;
-volatile unsigned char* pin_a = (unsigned char*) 0x20; //Water Sensor A7 PF7 //Green LED D23 PA1 //Yellow LED D24 PA2 //Blue LED D25 PA3 //Red LED D27 PA5 
+volatile unsigned char* pin_a = (unsigned char*) 0x20; //Water Sensor A7 PF7 //Green LED D23 PA1 //Yellow LED D24 PA2 //Blue LED D25 PA3 //Red LED D27 PA5
 
 //PORT L INPUT/OUTPUT
 volatile unsigned char* port_l = (unsigned char*) 0x10B;
 volatile unsigned char* ddr_l = (unsigned char*) 0x10A;
-volatile unsigned char* pin_l = (unsigned char*) 0x109; //LCD Pins 
+volatile unsigned char* pin_l = (unsigned char*) 0x109; //LCD Pins
 
 volatile unsigned char* myTCCR1A = (unsigned char*) 0x80;
 volatile unsigned char* myTCCR1B = (unsigned char*) 0x81;
@@ -73,126 +78,109 @@ volatile unsigned char* my_ADCSRB = (unsigned char*) 0x7B;
 volatile unsigned char* my_ADCSRA = (unsigned char*) 0x7A;
 volatile unsigned int* my_ADC_DATA = (unsigned int*) 0x78;
 
-#define RDA 0x80
-#define TBE 0x20  
 volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
 volatile unsigned char *myUCSR0B = (unsigned char *)0x00C1;
 volatile unsigned char *myUCSR0C = (unsigned char *)0x00C2;
 volatile unsigned int  *myUBRR0  = (unsigned int *) 0x00C4;
 volatile unsigned char *myUDR0   = (unsigned char *)0x00C6;
 
-volatile unsigned char* myEIMSK = (unsigned char*) 0x1D; 
-volatile unsigned char* myEIFR = (unsigned char*) 0x1C;  
-volatile unsigned char* mySREG = (unsigned char*) 0x3F; 
+volatile unsigned char* myEIMSK = (unsigned char*) 0x1D;
+volatile unsigned char* myEIFR = (unsigned char*) 0x1C;
+volatile unsigned char* mySREG = (unsigned char*) 0x3F;
 volatile unsigned char* myEICRB = (unsigned char*) 0x6A;
 
-unsigned int adc_read(unsigned char adc_channel_num);
-unsigned int water_value = adc_read(7); //Read from ADC channel 7
+
+
+//------------------------------------------------------
+
+const int DISABLED_ST = 1;
+const int IDLE_ST = 0;
+const int RUNNING_ST = 2;
+const int ERROR_ST = 3;
+
+int presentState;
+int nextState;
+
+volatile bool buttonPressed = false;
 
 void setup() {
   U0init(9600);
   adc_init();
   dht.begin();
-  lcd.begin(16, 2); // set up number of columns and rows
+  lcd.begin(16, 2); // Set up the LCD
+  *ddr_a |= 0b00111110; // Set LED pins as output
 
-  unsigned char eicrb_temp = *myEICRB; // Temporary variable to store the value of myEICRB
-  eicrb_temp |= (1 << ISC41); // Set ISC41 bit
-  eicrb_temp &= ~(1 << ISC40); // Clear ISC40 bit
-  *myEICRB = eicrb_temp; // Assign the modified value back to myEICRB
+  set_PE_as_input(4); // Set up button as input
 
-  *myEIMSK |= (1 << INT4); // Enable INT4 interrupt
+  presentState = DISABLED_ST;
+  nextState = DISABLED_ST;
+  enableLED(presentState);
 
- // rtc.begin(); //Start Real Time Clock
-
-//  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-  
-  //RTC.setHourMode(CLOCK_H12);
-  // if (RTC.getHourMode() == CLOCK_H12)
-  //{
-  //   RTC.setMeridiem(HOUR_PM);
-  //}
-
- // RTC.setWeek(1);
-
-  //RTC.setDate(30,04,24);
-  //RTC.setTime(23,00,00);
-//}
-
+  attachInterrupt(digitalPinToInterrupt(2), hInterrupt, FALLING);
 }
 
 void loop() {
-
-
- // while(!previousStatus && currentStatus){
-    
-  //  float humidity = dht.readHumidity();
- //   float temperature = dht.readTemperature();
-
-    //water_value = adc_read(7);
-
-  //  *port_a ^= (1 << PA2);
-
-    //water level error message to LCD
-    
- // }
-
- // previousStatus = currentStatus;
-
- // if (!(*pin_e & (1 << PE5))) {
- //   currentStatus = true; // Button is pressed
- // } else {
- //   currentStatus = false; // Button is not pressed
- // }
- // unsigned int adc_read(unsigned char adc_channel_num);
- // unsigned int water_value = adc_read(7); //Read from ADC channel 7
-
- unsigned int water_value = adc_read(7); //Read from ADC channel 7
-
-  if (water_value < 102) { // Display error message for low water level
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Error Message:");
-    lcd.setCursor(0,1);
-    lcd.print("Water Level Low");
-  } 
-  else {
-    unsigned long currentMillis = millis(); // Get the current time
-  
-  if (currentMillis - previousMillis >= interval) { // Check if it's time to update the LCD
-    previousMillis = currentMillis; // Save the last time the LCD was updated
-    
+  unsigned int water_value = adc_read(7); // Read from ADC channel 7
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature();
-  
-  if (humidity == -999.0 || temperature == -999.0) {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Failed to read");
-    lcd.setCursor(0, 1);
-    lcd.print("from DHT sensor!");
-    delay(2000); // use in house delay function
-    return;
+
+  switch (presentState) {
+    case DISABLED_ST:
+      if (buttonPressed) {
+        buttonPressed = false;
+        lcd.clear();
+        lcd.print("Disabled State");
+        nextState = IDLE_ST;
+      }
+      break;
+
+    case IDLE_ST:
+      lcd.clear();
+      lcd.print("Temp: ");
+      lcd.print(temperature);
+      lcd.print(" C");
+      lcd.setCursor(0, 1);
+      lcd.print("Humidity: ");
+      lcd.print(humidity);
+      lcd.print("%");
+
+      if (buttonPressed) {
+        buttonPressed = false;
+        nextState = DISABLED_ST;
+      } else if (water_value <= 120) {
+        nextState = ERROR_ST;
+      }
+      break;
+
+    case RUNNING_ST:
+      if (water_value > 120 && temperature > 1) {
+        enableLED(RUNNING_ST); // Blue LED On
+
+      } else {
+        nextState = ERROR_ST;
+      }
+      break;
+
+    case ERROR_ST:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Error Message:");
+      lcd.setCursor(0, 1);
+      lcd.print("Water Level Low");
+      enableLED(ERROR_ST); // Red LED On
+
+      if (water_value > 120) {
+        nextState = DISABLED_ST;
+      }
+      break;
   }
 
-  // Display temperature and humidity on LCD
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Temp: ");
-  lcd.print(temperature *9/5 +32);
-  lcd.print(" F");
-
-  lcd.setCursor(0, 1);
-  lcd.print("Humidity: ");
-  lcd.print(humidity);
-  lcd.print("%");
+  if (nextState != presentState) {
+    presentState = nextState;
+    enableLED(presentState);
   }
-
-
-
-
-  
 }
- }
+//--------------------------------------------------------------------------------
 
 
 void adc_init()
@@ -220,7 +208,7 @@ unsigned int adc_read(unsigned char adc_channel_num)
   // clear the channel selection bits (MUX 5)
   *my_ADCSRB &= 0b11110111;
   // set the channel number
-  if(adc_channel_num > 7)
+  if (adc_channel_num > 7)
   {
     // set the channel selection bits, but remove the most significant bit (bit 3)
     adc_channel_num -= 8;
@@ -232,21 +220,21 @@ unsigned int adc_read(unsigned char adc_channel_num)
   // set bit 6 of ADCSRA to 1 to start a conversion
   *my_ADCSRA |= 0x40;
   // wait for the conversion to complete
-  while((*my_ADCSRA & 0x40) != 0);
+  while ((*my_ADCSRA & 0x40) != 0);
   // return the result in the ADC data register
   return *my_ADC_DATA;
 }
 
 void U0init(int U0baud)
 {
- unsigned long FCPU = 16000000;
- unsigned int tbaud;
- tbaud = (FCPU / 16 / U0baud - 1);
- // Same as (FCPU / (16 * U0baud)) - 1;
- *myUCSR0A = 0x20;
- *myUCSR0B = 0x18;
- *myUCSR0C = 0x06;
- *myUBRR0  = tbaud;
+  unsigned long FCPU = 16000000;
+  unsigned int tbaud;
+  tbaud = (FCPU / 16 / U0baud - 1);
+  // Same as (FCPU / (16 * U0baud)) - 1;
+  *myUCSR0A = 0x20;
+  *myUCSR0B = 0x18;
+  *myUCSR0C = 0x06;
+  *myUBRR0  = tbaud;
 }
 
 unsigned char U0kbhit()
@@ -256,7 +244,7 @@ unsigned char U0kbhit()
 
 void U0putchar(unsigned char U0pdata)
 {
-  while((*myUCSR0A & TBE)==0);
+  while ((*myUCSR0A & TBE) == 0);
   *myUDR0 = U0pdata;
 }
 
@@ -264,9 +252,9 @@ void U0putchar(unsigned char U0pdata)
 void my_delay(unsigned int freq)
 {
   // calc period
-  double period = 1.0/double(freq);
+  double period = 1.0 / double(freq);
   // 50% duty cycle
-  double half_period = period/ 2.0f;
+  double half_period = period / 2.0f;
   // clock period def
   double clk_period = 0.0000000625;
   // calc ticks
@@ -275,30 +263,53 @@ void my_delay(unsigned int freq)
   // stop the timer
   *myTCCR1B &= 0xF8;
   // set the counts
-  *myTCNT1 = (unsigned int) (65535-ticks);  //(65536 - ticks)
+  *myTCNT1 = (unsigned int) (65535 - ticks); //(65536 - ticks)
   // start the timer
-  * myTCCR1B |= 0b00000010; 
+  * myTCCR1B |= 0b00000010;
   //prescaler 0b00000001 - changed to be before TCCR1A is set to 0 for start
   * myTCCR1A = 0x0;
-  
+
   // wait for overflow
-  while((*myTIFR1 & 0x01)==0); // 0b 0000 0000
+  while ((*myTIFR1 & 0x01) == 0); // 0b 0000 0000
   // stop the timer
   *myTCCR1B &= 0xF8;   // 0b 0000 0000
-  // reset TOV           
+  // reset TOV
   *myTIFR1 |= 0x01;
 }
 
-ISR(INT4_vect)
+void enableLED(int state) {
+  *port_a &= ~(0b00111110); // Turn off all LEDs
+  switch (state) {
+    case DISABLED_ST:
+      *port_a |= (1 << 2); // Yellow LED
+      break;
+    case IDLE_ST:
+      *port_a |= (1 << 1); // Green LED
+      break;
+    case RUNNING_ST:
+      *port_a |= (1 << 3); // Blue LED
+      break;
+    case ERROR_ST:
+      *port_a |= (1 << 5); // Red LED
+      break;
+  }
+}
+
+//------------------------------------------------------
+
+void set_PE_as_input(unsigned char pin_num) {
+  *ddr_e &= ~(0x01 << pin_num);
+  *port_e |= (1 << pin_num);
+
+}
+
+void hInterrupt()
 {
-  previousStatus = !previousStatus;
-  currentStatus = !currentStatus;
-  
-  if (currentStatus) {
-    // Button is pressed, turn on the yellow LED
-    *port_a |= (1 << PA2); // Set PA2 high to turn on the yellow LED
-  } else {
-    // Button is released, turn off the yellow LED
-    *port_a &= ~(1 << PA2); // Set PA2 low to turn off the yellow LED
+  static unsigned long lastInterruptTime = 0;
+  unsigned long interruptTime = millis();
+
+  if (interruptTime - lastInterruptTime > 50) {
+    buttonPressed = true;
+    lastInterruptTime = interruptTime;
   }
 }
