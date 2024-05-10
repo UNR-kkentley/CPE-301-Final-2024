@@ -15,6 +15,7 @@ void adc_init();
 unsigned int adc_read(unsigned char adc_channel_num);
 void enableLED(int color);
 void set_PE_as_input(unsigned char pin_num);
+void hInterrupt();
 
 // LCD pins <--> Arduino pins
 const int RS = 49, RW = 48, E = 47, D4 = 53, D5 = 51, D6 = 50, D7 = 52;
@@ -25,7 +26,7 @@ const long interval = 60000; //1-min delay
 
 unsigned int adc_read(unsigned char adc_channel_num);
 unsigned int water_value = adc_read(7); //Read from ADC channel 7
-#define temp_value 23
+#define temp_value 24
 
 #define RDA 0x80
 #define TBE 0x20
@@ -146,24 +147,30 @@ void loop() {
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature();
 
+  if (presentState == RUNNING_ST) {
+    dc_motor(1);
+  }
+  else {
+    dc_motor(0);
+  }
+
+  if (presentState == RUNNING_ST || presentState == IDLE_ST) {
+    stepperMotor(1);
+  } else {
+    stepperMotor(0);
+  }
 
 
-  //stepperMotor(1);
-  //dc_motor(1); //call function for motor control 1 - motor on 0 - motor off
-
-  // Handle state-specific logic
   switch (presentState) {
     case DISABLED_ST:
       if (buttonPressed) {
         buttonPressed = false;
-        if (presentState != RUNNING_ST) {
-          dc_motor(0); // Ensures the motor is off if not in RUNNING state
-        }
         nextState = IDLE_ST;
       }
       lcd.clear();
       lcd.print("Disabled");
       break;
+
     case IDLE_ST:
       lcd.clear();
       lcd.print("Temp: ");
@@ -173,9 +180,7 @@ void loop() {
       lcd.print("Humidity: ");
       lcd.print(humidity);
       lcd.print("%");
-      if (presentState != RUNNING_ST) {
-        dc_motor(0); // Ensures the motor is off if not in RUNNING state
-      }
+      stepperMotor(1); // Operate stepper motor in IDLE state
 
       if (buttonPressed) {
         buttonPressed = false;
@@ -186,6 +191,7 @@ void loop() {
         nextState = RUNNING_ST;
       }
       break;
+
     case RUNNING_ST:
       lcd.clear();
       lcd.print("Temp: ");
@@ -195,10 +201,6 @@ void loop() {
       lcd.print("Humidity: ");
       lcd.print(humidity);
       lcd.print("%");
-      dc_motor(1);
-      if (presentState != RUNNING_ST) {
-        dc_motor(0); // Ensures the motor is off if not in RUNNING state
-      }
 
       if (temperature < temp_value) {
         nextState = IDLE_ST;
@@ -209,6 +211,7 @@ void loop() {
         nextState = ERROR_ST;
       }
       break;
+
     case ERROR_ST:
       lcd.clear();
       lcd.setCursor(0, 0);
@@ -216,26 +219,23 @@ void loop() {
       lcd.setCursor(0, 1);
       lcd.print("Water Level Low");
       enableLED(ERROR_ST); // Ensure RED LED is on in ERROR state
-      if (presentState != RUNNING_ST) {
-        dc_motor(0); // Ensures the motor is off if not in RUNNING state
-      }
 
       if (buttonPressed) {
         buttonPressed = false;
-        nextState = DISABLED_ST;  // Allow return to DISABLED_ST when button pressed in ERROR state
+        nextState = DISABLED_ST;
       }
       break;
   }
 
-  // State transition logic...
   if (nextState != presentState) {
-    if (nextState != RUNNING_ST) {
-      dc_motor(0); // Turn off the motor on state exit
-    }
     presentState = nextState;
     enableLED(presentState);
+    if (presentState != IDLE_ST && presentState != RUNNING_ST) {
+      stepperMotor(0); // Turn off stepper motor when not in IDLE or RUNNING state
+    }
   }
 }
+
 
 //--------------------------------------------------------------------------------
 
@@ -306,26 +306,26 @@ void U0putchar(unsigned char U0pdata)
 }
 
 void my_delay(unsigned int ms) {
-   
-    // timer to prescale by 64
-    unsigned long ticks = (16000000 / 64) * ((double)ms / 1000.0);
 
-    if (ticks > 65535) {
-        ticks = 65535; // Cap the value to the timer's maximum
-    }
+  // timer to prescale by 64
+  unsigned long ticks = (16000000 / 64) * ((double)ms / 1000.0);
 
-    *myTCNT1 = 65535 - ticks; // Count up to 65535
+  if (ticks > 65535) {
+    ticks = 65535; // Cap the value to the timer's maximum
+  }
 
-    *myTCCR1B = 0x03; // Clock select bits: prescaler set to 64
+  *myTCNT1 = 65535 - ticks; // Count up to 65535
 
-    // Wait for the timer overflow flag to be set
-    while ((*myTIFR1 & 0x01) == 0);
+  *myTCCR1B = 0x03; // Clock select bits: prescaler set to 64
 
-    // Stop the timer
-    *myTCCR1B = 0x00; // Stop the timer by setting the clock select bits to zero
+  // Wait for the timer overflow flag to be set
+  while ((*myTIFR1 & 0x01) == 0);
 
-    // Clear the overflow flag by writing a 1 to it
-    *myTIFR1 |= 0x01;
+  // Stop the timer
+  *myTCCR1B = 0x00; // Stop the timer by setting the clock select bits to zero
+
+  // Clear the overflow flag by writing a 1 to it
+  *myTIFR1 |= 0x01;
 }
 
 
@@ -350,16 +350,6 @@ void enableLED(int state) {
 //------------------------------------------------------
 
 
-
-void stepperMotor(int stepperCondition) {
-  if (stepperCondition == 1) {
-    int current_pot_val = analogRead(9); //adc_read does not work, stepper does not loop if using adc_read
-
-    myStepper.step(current_pot_val - previous_pot_val);
-
-    previous_pot_val = current_pot_val;
-  }
-}
 
 void set_PF_as_input(unsigned char pin_num) { //function to set port B to output
   *ddr_f &= ~(1 << pin_num);
@@ -391,46 +381,63 @@ void write_PB_low(unsigned char pin_num) { //function to set specified port B pi
   *port_b &= ~(1 << pin_num);
 }
 
-void write_pin(unsigned char pin_num, int value) { //function to set specified value at specified port&pin
-  *port_b = (*port_b & ~(1 << pin_num)) | value;
-}
-
 void dc_motor(int motorCondition) {
-  static bool motorRunning = false;
+    static bool motorRunning = false;
 
-  if (motorCondition == 1 && !motorRunning) {
-    float temperature = dht.readTemperature();
-    if (temperature > temp_value) {
-      write_PB_high(motorInput1); // Provide power to DC motor
-      write_pin(motorEnablePin, 225); // Set DC motor speed
-      motorRunning = true;
+    // Setup motor pins as output
+    pinMode(motorEnablePin, OUTPUT); // PWM pin
+    pinMode(motorInput1, OUTPUT);    // Direction pin
+    pinMode(motorInput2, OUTPUT);    // Direction pin
+
+    if (motorCondition == 1 && !motorRunning) {
+        digitalWrite(motorInput1, HIGH);  // Set direction
+        digitalWrite(motorInput2, LOW);   // Set opposite direction
+        analogWrite(motorEnablePin, 225); // PWM speed control
+        motorRunning = true;
+    } else if (motorCondition == 0 && motorRunning) {
+        digitalWrite(motorEnablePin, LOW); // Stop the motor
+        motorRunning = false;
     }
-  } else if (motorCondition == 0 && motorRunning) {
-    write_PB_low(motorInput1); // Stop DC motor
-    motorRunning = false;
-  }
 }
+
+
+
+void stepperMotor(int stepperCondition) {
+    static int lastSegment = -1;
+    int current_pot_val = adc_read(9);
+    int segmentSize = 1023 / 15;  
+    int currentSegment = current_pot_val / segmentSize;
+
+    if (stepperCondition == 1 && currentSegment != lastSegment) {
+        int stepCount = (currentSegment - lastSegment) * step_move;  // Calculate steps to move
+        myStepper.step(stepCount);
+        lastSegment = currentSegment;
+    } else if (stepperCondition == 0) {
+        lastSegment = -1;  // Reset when stepper is not supposed to run
+    }
+}
+
 
 
 void setupInterruptTimer() {
-    TCCR1A = 0;   // Clear register A
-    TCCR1B = 0;   // Clear register B
+  TCCR1A = 0;   // Clear register A
+  TCCR1B = 0;   // Clear register B
 
-    TCNT1  = 65535 - DEBOUNCE_INTERVAL;  // Set the timer count for the desired delay
+  TCNT1  = 65535 - DEBOUNCE_INTERVAL;  // Set the timer count for the desired delay
 
-    TIMSK1 &= ~(1 << TOIE1);  
-    TCCR1B |= (1 << CS12);    // Set the prescaler to 256 and start the timer
-    TIMSK1 |= (1 << TOIE1);   
+  TIMSK1 &= ~(1 << TOIE1);
+  TCCR1B |= (1 << CS12);    // Set the prescaler to 256 and start the timer
+  TIMSK1 |= (1 << TOIE1);
 }
 
 ISR(TIMER1_OVF_vect) {
-    TCNT1 = 65535 - DEBOUNCE_INTERVAL;  // Reload timer
-    buttonPressed = true;
-    TIMSK1 &= ~(1 << TOIE1);  // Disable timer1 interrupts
+  TCNT1 = 65535 - DEBOUNCE_INTERVAL;  // Reload timer
+  buttonPressed = true;
+  TIMSK1 &= ~(1 << TOIE1);  // Disable timer1 interrupts
 }
 
 void hInterrupt() {
-    TIMSK1 &= ~(1 << TOIE1);  
-    TCNT1 = 65535 - DEBOUNCE_INTERVAL;  // Restart the debounce timer
-    TIMSK1 |= (1 << TOIE1);  // Turn on timer1 interrupts
+  TIMSK1 &= ~(1 << TOIE1);
+  TCNT1 = 65535 - DEBOUNCE_INTERVAL;  // Restart the debounce timer
+  TIMSK1 |= (1 << TOIE1);  // Turn on timer1 interrupts
 }
