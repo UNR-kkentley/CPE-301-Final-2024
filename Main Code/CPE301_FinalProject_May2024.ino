@@ -174,9 +174,9 @@ void loop() {
       if (buttonPressed) {
         buttonPressed = false;
         nextState = DISABLED_ST;
-      } else if (water_value <= 120) {
+      } else if (water_value <= 102) {
         nextState = ERROR_ST;
-      } else if (water_value > 120 && temperature > temp_value) {
+      } else if (water_value > 102 && temperature > temp_value) {
         nextState = RUNNING_ST;
       }
       break;
@@ -190,7 +190,7 @@ void loop() {
       } else if (buttonPressed) {
         buttonPressed = false;
         nextState = DISABLED_ST;
-      } else if (water_value <= 120) {
+      } else if (water_value <= 102) {
         nextState = ERROR_ST;
       }
       break;
